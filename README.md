@@ -1,6 +1,6 @@
 # 6.S081note
 
-##环境配置
+## 环境配置
 * 官方文档
 https://pdos.csail.mit.edu/6.S081/2020/tools.html
 * 在下载risc-v toolchain时下载过慢，参考了https://zhayujie.com/mit6828-env.html
