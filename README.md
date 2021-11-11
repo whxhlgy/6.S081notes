@@ -10,4 +10,11 @@ https://pdos.csail.mit.edu/6.S081/2020/tools.html
   ...
   ```
   参考了https://github.com/ReZeroS/mit6.828-note/issues/2得以解决
-* 目前，编译完过程中还是会出现`clang: error: the clang compiler does not support '-march=rv64imafdc'`，但是test passing，所以暂时不管了。
+* 目前，编译完过程中还是会出现`clang: error: the clang compiler does not support '-march=rv64imafdc'`
+
+
+## 环境配置（remake）
+在macos上失败了很多次，重新在docker上配置环境
+
+参考了https://zhuanlan.zhihu.com/p/377466759
+过程无比的流畅:)
