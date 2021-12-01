@@ -2,9 +2,10 @@
 #include "kernel/types.h"
 #include "kernel/stat.h"
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[])
+{
     int p[2];
-    pipe(p); 
+    pipe(p);
     int status;
     char buf[512];
 
