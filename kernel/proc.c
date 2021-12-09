@@ -693,3 +693,13 @@ procdump(void)
     printf("\n");
   }
 }
+
+uint64 unused_num() {
+    int pid, count = 0;
+    for (pid = 0; pid < NPROC; pid++) {
+        if (proc[pid].state != UNUSED) {
+            count++;
+        }
+    }
+    return count;
+} 

@@ -104,6 +104,8 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
+extern uint64 sys_trace(void);
+extern uint64 sys_sysinfo(void);
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -127,17 +129,53 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_trace]   sys_trace,
+[SYS_sysinfo] sys_sysinfo,
 };
+
+/* 获取syscall的名字 */
+char* syscall_name(int num)
+{
+    char* name = "";
+    switch (num) {
+        case 1  : name = "fork"   ; break ;
+        case 2  : name = "exit"   ; break ;
+        case 3  : name = "wait"   ; break ;
+        case 4  : name = "pipe"   ; break ;
+        case 5  : name = "read"   ; break ;
+        case 6  : name = "kill"   ; break ;
+        case 7  : name = "exec"   ; break ;
+        case 8  : name = "fstat"  ; break ;
+        case 9  : name = "chdir"  ; break ;
+        case 10 : name = "dup"    ; break ;
+        case 11 : name = "getpid" ; break ;
+        case 12 : name = "sbrk"   ; break ;
+        case 13 : name = "sleep"  ; break ;
+        case 14 : name = "uptime" ; break ;
+        case 15 : name = "open"   ; break ;
+        case 16 : name = "write"  ; break ;
+        case 17 : name = "mknod"  ; break ;
+        case 18 : name = "unlink" ; break ;
+        case 19 : name = "link"   ; break ;
+        case 20 : name = "mkdir"  ; break ;
+        case 21 : name = "close"  ; break ;
+        case 22 : name = "trace"  ; break ;
+    }
+    return name;
+}
 
 void
 syscall(void)
 {
-  int num;
+  int num, rv;
   struct proc *p = myproc();
 
   num = p->trapframe->a7;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    p->trapframe->a0 = syscalls[num]();
+    rv = (p->trapframe->a0 = syscalls[num]());
+    if (((1 << num) & p->trace_mask) != 0) {
+        printf("%d: syscall %s -> %d\n", p->pid, syscall_name(num), rv);
+    }
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);
