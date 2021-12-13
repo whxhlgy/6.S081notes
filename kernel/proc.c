@@ -85,6 +85,7 @@ allocpid() {
   return pid;
 }
 
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -114,12 +115,23 @@ found:
   }
 
   // An empty user page table.
-  p->pagetable = proc_pagetable(p);
+  p->pagetable = proc_pagetable(p); 
   if(p->pagetable == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
   }
+
+  // 创建一个分配好kernel stack的kernel pagetable
+  p->per_kpgtb = kvmcreat();
+  if (p->pagetable == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  uint64 va = KSTACK((int)(p - proc));
+  per_kvmmap(p->per_kpgtb, va, kvmpa(va), PGSIZE, PTE_R | PTE_W);
+  p->kstack = va;
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -128,6 +140,14 @@ found:
   p->context.sp = p->kstack + PGSIZE;
 
   return p;
+}
+
+// free a proc kernel pagetable
+// but not free the leaf physical memory
+void proc_freekpgtb(pagetable_t pgtb, struct proc *p) {
+  ukvmunmap(pgtb);
+  uvmunmap(pgtb, KSTACK((int)(p - proc)), 1, 0);
+  ukvmfree(pgtb);
 }
 
 // free a proc structure and the data hanging from it,
@@ -141,6 +161,8 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if (p->per_kpgtb)
+    proc_freekpgtb(p->per_kpgtb, p);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -194,6 +216,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
 }
+
 
 // a user program that calls exec("/init")
 // od -t xC initcode
@@ -473,10 +496,15 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
-        swtch(&c->context, &p->context);
 
+        // switch to chosen process kernel pagetable
+        w_satp(MAKE_SATP(p->per_kpgtb));
+        sfence_vma();
+        swtch(&c->context, &p->context);
+        
         // Process is done running for now.
         // It should have changed its p->state before coming back.
+        kvminithart(); //switch back
         c->proc = 0;
 
         found = 1;
@@ -487,6 +515,7 @@ scheduler(void)
     if(found == 0) {
       intr_on();
       asm volatile("wfi");
+
     }
 #else
     ;

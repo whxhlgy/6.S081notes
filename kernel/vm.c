@@ -120,6 +120,12 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
   if(mappages(kernel_pagetable, va, sz, pa, perm) != 0)
     panic("kvmmap");
 }
+void
+per_kvmmap(pagetable_t pgtb, uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(mappages(pgtb, va, sz, pa, perm) != 0)
+    panic("per_kvmmap");
+}
 
 // translate a kernel virtual address to
 // a physical address. only needed for
@@ -192,6 +198,17 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     }
     *pte = 0;
   }
+}
+
+// unmap内核必要的映射
+void ukvmunmap(pagetable_t per_kpgtb) {
+  uvmunmap(per_kpgtb, UART0, 1, 0);
+  uvmunmap(per_kpgtb, VIRTIO0, 1, 0);
+  uvmunmap(per_kpgtb, CLINT, PGROUNDUP(0x10000)/PGSIZE, 0);
+  uvmunmap(per_kpgtb, PLIC, PGROUNDUP(0x400000)/PGSIZE, 0);
+  uvmunmap(per_kpgtb, KERNBASE, PGROUNDUP((uint64)etext-KERNBASE)/PGSIZE, 0);
+  uvmunmap(per_kpgtb, (uint64)etext, PGROUNDUP(PHYSTOP-(uint64)etext)/PGSIZE, 0);
+  uvmunmap(per_kpgtb, TRAMPOLINE, 1, 0);
 }
 
 // create an empty user page table.
@@ -297,6 +314,10 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   if(sz > 0)
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
   freewalk(pagetable);
+}
+
+void ukvmfree(pagetable_t per_kpgtb) {
+    freewalk(per_kpgtb);
 }
 
 // Given a parent process's page table, copy
@@ -439,4 +460,67 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// 打印页表中有效的部分
+void _vmprint(pagetable_t pgtb, int level)
+{
+    if (level > 3)
+        return;
+    int npte;
+
+    for (npte = 0; npte < 512; npte++, pgtb++) {
+        pte_t *pte = &(*pgtb);
+        if (*pte & PTE_V) {
+            /* 操作字符串 */
+            char prefix[128], *p = prefix;
+            for (int i = 0; i < level; i++) {
+                memmove(p, ".. ", 4);
+                p += 3;
+            }
+            *(p - 1) = 0;
+            printf("%s%d: pte %p pa %p\n", prefix, npte, *pte, PTE2PA(*pte));
+
+            /* 打印下一级 */
+            _vmprint((pagetable_t)PTE2PA(*pte), level + 1);
+        }
+    }
+}
+
+void vmprint(pagetable_t pgtb) {
+    if (!pgtb)
+        return;
+    printf("page table %p\n", pgtb);
+    _vmprint(pgtb, 1);
+}
+
+/* creat a per-process kernel page table */
+pagetable_t kvmcreat()
+{
+  pagetable_t pgtb;
+  pgtb = (pagetable_t) kalloc();
+  memset(pgtb, 0, PGSIZE);
+
+  // uart registers
+  per_kvmmap(pgtb, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  per_kvmmap(pgtb, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // CLINT
+  per_kvmmap(pgtb, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC
+  per_kvmmap(pgtb, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  per_kvmmap(pgtb, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  per_kvmmap(pgtb, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  per_kvmmap(pgtb, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  return pgtb;
 }
