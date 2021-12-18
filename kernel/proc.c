@@ -34,14 +34,15 @@ procinit(void)
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
+      /*  
       char *pa = kalloc();
       if(pa == 0)
         panic("kalloc");
       uint64 va = KSTACK((int) (p - proc));
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
+      p->kstack = va;*/
   }
-  kvminithart();
+  //kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -124,13 +125,12 @@ found:
 
   // 创建一个分配好kernel stack的kernel pagetable
   p->per_kpgtb = kvmcreat();
-  if (p->pagetable == 0) {
-    freeproc(p);
-    release(&p->lock);
-    return 0;
-  }
-  uint64 va = KSTACK((int)(p - proc));
-  per_kvmmap(p->per_kpgtb, va, kvmpa(va), PGSIZE, PTE_R | PTE_W);
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = KSTACK((int)(0));
+
+  per_kvmmap(p->per_kpgtb, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
   p->kstack = va;
 
   // Set up new context to start executing at forkret,
@@ -145,8 +145,12 @@ found:
 // free a proc kernel pagetable
 // but not free the leaf physical memory
 void proc_freekpgtb(pagetable_t pgtb, struct proc *p) {
+  // 取消kernel pagetable 必要的映射
   ukvmunmap(pgtb);
-  uvmunmap(pgtb, KSTACK((int)(p - proc)), 1, 0);
+  // 取消kstack的映射
+  uvmunmap(pgtb, p->kstack, 1, 1);
+  // free user address mapping
+  uvmunmap(pgtb, 0, PGROUNDUP(p->sz)/PGSIZE, 0);
   ukvmfree(pgtb);
 }
 
@@ -253,6 +257,8 @@ userinit(void)
 
   p->state = RUNNABLE;
 
+  pgtbCopy(p->pagetable, p->per_kpgtb, 0, p->sz);
+
   release(&p->lock);
 }
 
@@ -266,12 +272,21 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) 
       return -1;
-    }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
+
+  if (n > 0) {
+    // 如果useraddress 增长，要更新kernel page table
+    pgtbCopy(p->pagetable, p->per_kpgtb, p->sz, n);
+  } else if (n < 0) {
+    // 如果减少，则取消一部分映射
+    int npages = (PGROUNDUP(p->sz) - PGROUNDUP(sz))/PGSIZE;
+    uvmunmap(p->per_kpgtb, PGROUNDUP(sz), npages, 0);
+  }
+
   p->sz = sz;
   return 0;
 }
@@ -317,6 +332,9 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+
+  // fork之后，也同样要复制一下child的kernel page table
+  pgtbCopy(np->pagetable, np->per_kpgtb, 0, np->sz);
 
   release(&np->lock);
 

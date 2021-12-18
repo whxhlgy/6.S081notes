@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -138,7 +140,7 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(kernel_pagetable, va, 0);
+  pte = walk(myproc()->per_kpgtb, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -204,7 +206,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 void ukvmunmap(pagetable_t per_kpgtb) {
   uvmunmap(per_kpgtb, UART0, 1, 0);
   uvmunmap(per_kpgtb, VIRTIO0, 1, 0);
-  uvmunmap(per_kpgtb, CLINT, PGROUNDUP(0x10000)/PGSIZE, 0);
+  //uvmunmap(per_kpgtb, CLINT, PGROUNDUP(0x10000)/PGSIZE, 0);
   uvmunmap(per_kpgtb, PLIC, PGROUNDUP(0x400000)/PGSIZE, 0);
   uvmunmap(per_kpgtb, KERNBASE, PGROUNDUP((uint64)etext-KERNBASE)/PGSIZE, 0);
   uvmunmap(per_kpgtb, (uint64)etext, PGROUNDUP(PHYSTOP-(uint64)etext)/PGSIZE, 0);
@@ -400,6 +402,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+  /*  
   uint64 n, va0, pa0;
 
   while(len > 0){
@@ -416,7 +419,8 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     dst += n;
     srcva = va0 + PGSIZE;
   }
-  return 0;
+  return 0;*/
+  return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -426,6 +430,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
+  /*  
   uint64 n, va0, pa0;
   int got_null = 0;
 
@@ -459,7 +464,8 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return 0;
   } else {
     return -1;
-  }
+  }*/
+  return copyinstr_new(pagetable, dst, srcva, max);
 }
 
 // 打印页表中有效的部分
@@ -508,7 +514,7 @@ pagetable_t kvmcreat()
   per_kvmmap(pgtb, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
   // CLINT
-  per_kvmmap(pgtb, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  // per_kvmmap(pgtb, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
   // PLIC
   per_kvmmap(pgtb, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
@@ -523,4 +529,16 @@ pagetable_t kvmcreat()
   // the highest virtual address in the kernel.
   per_kvmmap(pgtb, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
   return pgtb;
+}
+// 将user address的映射复制到kernel page table
+void pgtbCopy(pagetable_t pagetable, pagetable_t kernel_pagetable, uint64 start, uint64 sz) {
+    uint64 addr, flags, pa;
+    for (addr = PGROUNDUP(start); addr < start + sz; addr += PGSIZE) {
+        pte_t *pte = walk(pagetable, addr, 0);
+        flags = PTE_FLAGS(*pte);
+        flags &= ~(PTE_U);
+        pa = PTE2PA(*pte); 
+
+        per_kvmmap(kernel_pagetable, addr, pa, PGSIZE, flags);
+    }
 }
