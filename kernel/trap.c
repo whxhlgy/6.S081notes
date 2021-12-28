@@ -76,6 +76,21 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
+  // 新增
+  // 每隔n ticks触发一次alarm function
+  if(which_dev == 2 && p->alarm_interval != 0) {
+      if (p->alarm_left == 0) {
+          p->alarm_left = p->alarm_interval;
+
+          if (p->save_trapframe->kernel_satp == 0x505050505050505) {
+              // 将原来的trapframe保存起来
+              memmove(p->save_trapframe, p->trapframe, sizeof(*p->trapframe));
+              p->trapframe->epc = (uint64)p->alarm_handler;
+          }
+      }
+      p->alarm_left--;
+  }
+
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
     yield();
@@ -87,7 +102,7 @@ usertrap(void)
 // return to user space
 //
 void
-usertrapret(void)
+usertrapret()
 {
   struct proc *p = myproc();
 
@@ -116,7 +131,7 @@ usertrapret(void)
   w_sstatus(x);
 
   // set S Exception Program Counter to the saved user pc.
-  w_sepc(p->trapframe->epc);
+  w_sepc(p->trapframe->epc);  
 
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
@@ -217,4 +232,3 @@ devintr()
     return 0;
   }
 }
-

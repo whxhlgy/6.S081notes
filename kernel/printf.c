@@ -114,9 +114,26 @@ printf(char *fmt, ...)
     release(&pr.lock);
 }
 
+// 新增
+void backtrace() {
+    uint64 fp, nextfp;
+    fp = r_fp();
+
+    for (;;) {
+        // 如果该fp已经是最后一个，退出
+        if (fp == PGROUNDUP(fp)) 
+            break;
+
+        nextfp = *(uint64 *)(fp - 16);
+        printf("%p\n", *(uint64 *)(fp - 8));
+        fp = nextfp;
+    }
+}
+
 void
 panic(char *s)
 {
+  backtrace();
   pr.locking = 0;
   printf("panic: ");
   printf(s);
@@ -132,3 +149,5 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+

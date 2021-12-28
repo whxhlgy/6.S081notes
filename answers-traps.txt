@@ -1,0 +1,20 @@
+1. Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?
+=================================================================================================================
+
+字符串参数a0，另外两个数字存储在a1和a2
+
+2. Where is the call to function f in the assembly code for main? Where is the call to g? (Hint: the compiler may inline functions.)
+====================================================================================================================================
+
+都没有，被编译器inline了
+
+
+3. At what address is the function printf located?
+==================================================
+
+printf 位于地址 0x630
+
+4. What value is in the register ra just after the jalr to printf in main?
+==========================================================================
+
+0x38<main+28> 

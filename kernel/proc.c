@@ -127,6 +127,18 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // 新增
+  // 初始化alarm相关参数
+  p->alarm_left = -1;
+  p->alarm_handler = 0;
+  p->alarm_interval = 0;
+  p->save_trapframe = 0;
+  // Allocate a trapframe page.
+  if ((p->save_trapframe = (struct trapframe*)kalloc()) == 0) {
+      release(&p->lock);
+      panic("alloc save_trapframe");
+  }
+
   return p;
 }
 
@@ -141,6 +153,8 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if (p->save_trapframe)
+    kfree(p->save_trapframe);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
