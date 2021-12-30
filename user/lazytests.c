@@ -22,9 +22,10 @@ sparse_memory(char *s)
   }
   new_end = prev_end + REGION_SZ;
 
-  for (i = prev_end + PGSIZE; i < new_end; i += 64 * PGSIZE)
+  for (i = prev_end + PGSIZE; i < new_end; i += 64 * PGSIZE) 
     *(char **)i = i;
 
+  // printf("%p\n", i);
   for (i = prev_end + PGSIZE; i < new_end; i += 64 * PGSIZE) {
     if (*(char **)i != i) {
       printf("failed to read value from memory\n");
@@ -52,6 +53,7 @@ sparse_memory_unmap(char *s)
     *(char **)i = i;
 
   for (i = prev_end + PGSIZE; i < new_end; i += PGSIZE * PGSIZE) {
+    // printf("%p\n", i);
     pid = fork();
     if (pid < 0) {
       printf("error forking\n");
@@ -82,6 +84,7 @@ oom(char *s)
   if((pid = fork()) == 0){
     m1 = 0;
     while((m2 = malloc(4096*4096)) != 0){
+      //printf("m2: %p\n", m2);
       *(char**)m2 = m1;
       m1 = m2;
     }

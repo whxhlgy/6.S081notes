@@ -67,6 +67,33 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if (r_scause() == 15 || r_scause() == 13) {
+    // 
+    // 新增
+    // 
+    if (r_stval() >= PGROUNDUP(p->trapframe->sp) && r_stval() < p->sz) {
+      uint64 pa, va;
+      pa = (uint64)kalloc();
+      // 如果没有空间可以分配，终止该进程
+      if (pa == 0) {
+          p->killed = 1;
+      } else {
+          memset((char*)pa, 0, PGSIZE);
+          // printf("page fault: %p\n", r_stval());
+          va = PGROUNDDOWN(r_stval());
+          if (mappages(p->pagetable, va, PGSIZE, pa, PTE_W | PTE_X | PTE_R | PTE_U) != 0) {
+              kfree((uint64*)pa);
+              printf("no more memory\n");
+              p->killed = 1;
+          }
+      }
+
+    } else {
+      // 如果是超过sz的pagefault，终止进程
+      //printf("too large page fault: %p\n", r_stval());
+      //printf("p->sz: %p\n", p->sz);
+      p->killed = 1;
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -217,4 +244,3 @@ devintr()
     return 0;
   }
 }
-

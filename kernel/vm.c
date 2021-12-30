@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -101,12 +103,15 @@ walkaddr(pagetable_t pagetable, uint64 va)
     return 0;
 
   pte = walk(pagetable, va, 0);
-  if(pte == 0)
-    return 0;
-  if((*pte & PTE_V) == 0)
-    return 0;
-  if((*pte & PTE_U) == 0)
-    return 0;
+  if (pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0) {
+      pa = 0;
+      if (va < myproc()->sz && va >= PGROUNDUP(myproc()->trapframe->sp)) {
+          pa = (uint64)kalloc();
+          memset((char*)pa, 0, PGSIZE);
+          mappages(pagetable, PGROUNDDOWN(va), PGSIZE, pa, PTE_W | PTE_X | PTE_R | PTE_U);
+      }
+      return pa;
+  }
   pa = PTE2PA(*pte);
   return pa;
 }
@@ -180,10 +185,15 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
+    //
+    // 修改
+    //
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+      // panic("uvmunmap: walk");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+      // panic("uvmunmap: not mapped");
+      continue;
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -314,10 +324,15 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
+    //
+    // 修改
+    //
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      // panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      // panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -359,8 +374,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
+    
+    if (pa0 == 0) 
+        return -1;
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -385,7 +401,9 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
-      return -1;
+        return -1;
+    if (pa0 == 0) 
+        return -1;
     n = PGSIZE - (srcva - va0);
     if(n > len)
       n = len;
@@ -439,4 +457,31 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+// 打印页表中有效的部分
+void _vmprint(pagetable_t pgtb, int level)
+{
+    if (level > 3)
+        return;
+    int npte;
+
+    for (npte = 0; npte < 512; npte++, pgtb++) {
+        pte_t *pte = &(*pgtb);
+        if (*pte & PTE_V) {
+            /* 操作字符串 */
+            char prefix[128], *p = prefix;
+            for (int i = 0; i < level; i++) {
+                memmove(p, ".. ", 4);
+                p += 3;
+            }
+            *(p - 1) = 0;
+            printf("%s%d: pte %p pa %p\n", prefix, npte, *pte, PTE2PA(*pte));
+
+            /* 打印下一级 */
+            _vmprint((pagetable_t)PTE2PA(*pte), level + 1);
+        }
+    }
+}
+void vmprint(pagetable_t pgtb) {
+    _vmprint(pgtb, 1);
 }
