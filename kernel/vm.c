@@ -311,8 +311,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  //char *mem;
 
+  /*  
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
@@ -327,6 +328,26 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       kfree(mem);
       goto err;
     }
+  }
+  */
+
+  for(i = 0; i < sz; i += PGSIZE){
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcopy: pte should exist");
+    if((*pte & PTE_V) == 0)
+      panic("uvmcopy: page not present");
+    pa = PTE2PA(*pte);
+
+    // 清除子进程和父进程的PTE_W，并设置PTE_RSW
+    *pte = (*pte & ~PTE_W) | PTE_RSW;
+    flags = PTE_FLAGS(*pte);
+    // map到pa而不是mem
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      goto err;
+    // 增加一次引用
+    reference_add((uint64 *)pa, 1);
+    }
+    
   }
   return 0;
 
