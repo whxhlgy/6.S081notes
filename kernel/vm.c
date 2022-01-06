@@ -381,8 +381,12 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    pte = walk(pagetable, va0, 0); 
-    pa0 = PTE2PA(*pte);
+    pa0 = walkaddr(pagetable, va0);
+    if(pa0 == 0)
+      return -1;
+
+    // 取出pte，用来检查是否是COW_page 
+    pte = walk(pagetable, va0, 0);
     // new
     if (*pte & PTE_RSW) {
         if ((pa = (uint64)kalloc()) != 0) {

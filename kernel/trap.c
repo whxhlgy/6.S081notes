@@ -71,12 +71,11 @@ usertrap(void)
     uint64 va = r_stval(), *pa, *old_pa;
     uint64 flags;
     pte_t *pte;
-    pte = walk(p->pagetable, va, 0);
-    old_pa = (uint64 *)PTE2PA(*pte);
-    flags = ((uint64)PTE_FLAGS(*pte) | PTE_W) & ~PTE_RSW;
-
-    if (*pte & PTE_RSW) {
+    
+    if ((pte = walk(p->pagetable, va, 0)) && *pte & PTE_RSW) {
         if ((pa = kalloc()) != 0) {
+            old_pa = (uint64 *)PTE2PA(*pte);
+            flags = ((uint64)PTE_FLAGS(*pte) | PTE_W) & ~PTE_RSW;
             //printf("page fault: %p, sepc: %p\n", va, r_sepc());
             // 将原来的page复制一份，重新map，并设置PTE_W
             memmove(pa, (char *)old_pa, PGSIZE);
@@ -86,7 +85,7 @@ usertrap(void)
             mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)pa, flags);
             //printf("%p\n", *walk(p->pagetable, va, 0), *pte);
         } else {
-            // 如果没有空间，杀死进程
+            // 如果没有空间，或者是一个非法的地址，杀死进程
             p->killed = 1;
         }
     } else {
