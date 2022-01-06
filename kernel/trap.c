@@ -68,21 +68,23 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else if (r_scause() == 13 || r_scause() == 15) {
-    uint64 va = r_stval(), *pa;
+    uint64 va = r_stval(), *pa, *old_pa;
     uint64 flags;
     pte_t *pte;
     pte = walk(p->pagetable, va, 0);
+    old_pa = (uint64 *)PTE2PA(*pte);
+    flags = ((uint64)PTE_FLAGS(*pte) | PTE_W) & ~PTE_RSW;
 
-    if ((*pte & PTE_RSW) != 0) {
-        printf("page fault: %p sepc: %p\n", r_stval(), r_sepc());
+    if (*pte & PTE_RSW) {
         if ((pa = kalloc()) != 0) {
+            //printf("page fault: %p, sepc: %p\n", va, r_sepc());
             // 将原来的page复制一份，重新map，并设置PTE_W
-            flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_RSW;
-            memmove(pa, (char *)PTE2PA(*pte), PGSIZE);
+            memmove(pa, (char *)old_pa, PGSIZE);
             // 先取消map, 再重新map到pa
             uvmunmap(p->pagetable, PGROUNDDOWN(va), 1, 0);
-            reference_add((uint64*)PGROUNDDOWN(PTE2PA(*pte)), -1);
-            mappages(p->pagetable, PGROUNDDOWN(va), (uint64)pa, PGSIZE, flags);
+            reference_add((uint64*)old_pa, -1);
+            mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)pa, flags);
+            //printf("%p\n", *walk(p->pagetable, va, 0), *pte);
         } else {
             // 如果没有空间，杀死进程
             p->killed = 1;

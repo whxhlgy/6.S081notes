@@ -344,11 +344,11 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     // map到pa而不是mem
     if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
       goto err;
+    }
     // 增加一次引用
     reference_add((uint64 *)pa, 1);
-    }
-    
   }
+  //reference_print();
   return 0;
 
  err:
@@ -375,10 +375,30 @@ uvmclear(pagetable_t pagetable, uint64 va)
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
-  uint64 n, va0, pa0;
+  uint64 n, va0, pa0, pa;
+  pte_t *pte;
+  uint64 flags;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    pte = walk(pagetable, va0, 0); 
+    pa0 = PTE2PA(*pte);
+    // new
+    if (*pte & PTE_RSW) {
+        if ((pa = (uint64)kalloc()) != 0) {
+            //  将原来的page复制一份，重新map，并设置PTE_W
+            flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_RSW;
+            memmove((uint64 *)pa, (char*)pa0, PGSIZE);
+            // 先取消map, 再重新map到pa
+            uvmunmap(pagetable, va0, 1, 0);
+            reference_add((uint64*)pa0, -1);
+            mappages(pagetable, va0, PGSIZE, (uint64)pa, flags);
+        } else {
+            // 如果没有空间，返回-1
+            return -1;
+        }
+    }
+    // 重新获取pa0
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;

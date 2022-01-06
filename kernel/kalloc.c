@@ -49,9 +49,20 @@ freerange(void *pa_start, void *pa_end)
 //
 void reference_add(uint64 *pa, int n) {
   int *count = &reference_count[(PHYSTOP - (uint64)pa) / PGSIZE];
-  if (*count + n >= 0) {
-    *count += n; 
-  }
+  *count += n; 
+  if (*count == 0) {
+    kfree(pa);
+  } 
+  if (*count < 0)
+    panic("reference");
+}
+
+void reference_print() {
+  int end = 300;
+  printf("start print reference\n");
+  for (int i = 0; i < end; i++)
+    printf("%d", reference_count[i]);
+  printf("\nprint end\n");
 }
 
 // Free the page of physical memory pointed at by v,
@@ -67,9 +78,10 @@ kfree(void *pa)
     panic("kfree");
 
   // 该页ref_count减一，若减后为0，执行free 
-  reference_add(pa, -1);
+  if (reference_count[(PHYSTOP - PGROUNDDOWN((uint64)pa)) / PGSIZE] > 0) 
+      reference_count[(PHYSTOP - PGROUNDDOWN((uint64)pa)) / PGSIZE]--;
   //printf("free: %d\n", (PHYSTOP - (uint64)pa) / PGSIZE);
-  if (reference_count[(PHYSTOP - (uint64)pa) / PGSIZE] != 0) 
+  if (reference_count[(PHYSTOP - PGROUNDDOWN((uint64)pa)) / PGSIZE] != 0) 
       return;
 
   // Fill with junk to catch dangling refs.
