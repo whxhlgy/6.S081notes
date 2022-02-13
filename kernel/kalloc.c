@@ -31,13 +31,12 @@ kinit()
   // modified
   //
 
-  // 获取cpuid
-  push_off();
-  int id = cpuid();
-  pop_off();
-
-  initlock(&kmem[id].lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+  int id;
+  for (id = 0; id < NCPU; id++) {
+    initlock(&kmem[id].lock, "kmem");
+    if (id == 0)
+      freerange(end, (void*)PHYSTOP);
+  }
 }
 
 void

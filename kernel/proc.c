@@ -506,6 +506,7 @@ sched(void)
 
   if(!holding(&p->lock))
     panic("sched p->lock");
+  // printf("%d\n", mycpu()->noff);
   if(mycpu()->noff != 1)
     panic("sched locks");
   if(p->state == RUNNING)
