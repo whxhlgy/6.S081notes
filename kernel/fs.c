@@ -374,6 +374,36 @@ iunlockput(struct inode *ip)
 
 // Return the disk block address of the nth block in inode ip.
 // If there is no such block, bmap allocates one.
+// static uint
+// bmap(struct inode *ip, uint bn)
+// {
+//   uint addr, *a;
+//   struct buf *bp;
+
+//   if(bn < NDIRECT){
+//     if((addr = ip->addrs[bn]) == 0)
+//       ip->addrs[bn] = addr = balloc(ip->dev);
+//     return addr;
+//   }
+//   bn -= NDIRECT;
+
+//   if(bn < NINDIRECT){
+//     // Load indirect block, allocating if necessary.
+//     if((addr = ip->addrs[NDIRECT]) == 0)
+//       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+//     bp = bread(ip->dev, addr);
+//     a = (uint*)bp->data;
+//     if((addr = a[bn]) == 0){
+//       a[bn] = addr = balloc(ip->dev);
+//       log_write(bp);
+//     }
+//     brelse(bp);
+//     return addr;
+//   }
+
+//   panic("bmap: out of range");
+// }
+
 static uint
 bmap(struct inode *ip, uint bn)
 {
@@ -400,18 +430,77 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+  bn -= NINDIRECT;
+
+  if (bn < NDINDIRECT) {
+    // Load double_indirect block, allocating if necessary.
+    if ((addr = ip->addrs[NDIRECT + 1]) == 0)
+      ip->addrs[NDIRECT + 1] = addr = balloc(ip->dev);
+    bp = bread(ip->dev, addr);
+    a = (uint *)bp->data;
+
+    uint bn1, bn2;
+    bn1 = bn / NINDIRECT; // 用来索引single_indirect block
+    bn2 = bn % NINDIRECT; // 用来索引block
+    if ((addr = a[bn1]) == 0) {
+      // 获得single_indirect block 的地址
+      a[bn1] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+
+    // 获得地址后就可以release single_indirect block了
+    brelse(bp);
+      
+    bp = bread(ip->dev, addr);
+    a = (uint *)bp->data;
+    if ((addr = a[bn2]) == 0) {
+      // 获得 block 的地址
+      a[bn2] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
 
   panic("bmap: out of range");
 }
-
 // Truncate inode (discard contents).
 // Caller must hold ip->lock.
+// void
+// itrunc(struct inode *ip)
+// {
+//   int i, j;
+//   struct buf *bp;
+//   uint *a;
+
+//   for(i = 0; i < NDIRECT; i++){
+//     if(ip->addrs[i]){
+//       bfree(ip->dev, ip->addrs[i]);
+//       ip->addrs[i] = 0;
+//     }
+//   }
+
+//   if(ip->addrs[NDIRECT]){
+//     bp = bread(ip->dev, ip->addrs[NDIRECT]);
+//     a = (uint*)bp->data;
+//     for(j = 0; j < NINDIRECT; j++){
+//       if(a[j])
+//         bfree(ip->dev, a[j]);
+//     }
+//     brelse(bp);
+//     bfree(ip->dev, ip->addrs[NDIRECT]);
+//     ip->addrs[NDIRECT] = 0;
+//   }
+
+//   ip->size = 0;
+//   iupdate(ip);
+// }
 void
 itrunc(struct inode *ip)
 {
   int i, j;
-  struct buf *bp;
-  uint *a;
+  struct buf *bp, *bp2;
+  uint *a, *b;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
@@ -427,6 +516,28 @@ itrunc(struct inode *ip)
       if(a[j])
         bfree(ip->dev, a[j]);
     }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT]);
+    ip->addrs[NDIRECT] = 0;
+  }
+
+  // free double_indirect block
+  if(ip->addrs[NDIRECT + 1]){
+    bp = bread(ip->dev, ip->addrs[NDIRECT]);
+    a = (uint*)bp->data; // a是double_indirect block的内容
+
+    for(i = 0; i < NINDIRECT; i++){
+      if(a[i]) {
+        bp2 = bread(ip->dev, a[i]);
+        b = (uint *)bp->data; // b是single_indirect block的内容
+        for(j = 0; j < NINDIRECT; j++){
+          if(b[j])
+            bfree(ip->dev, b[j]);
+        }
+        brelse(bp2);
+      }
+    }
+
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
