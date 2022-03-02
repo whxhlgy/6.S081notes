@@ -297,6 +297,8 @@ sys_open(void)
 
   begin_op();
 
+  // printf("exec: open\n");
+
   if(omode & O_CREATE){
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
@@ -310,6 +312,34 @@ sys_open(void)
     }
     ilock(ip);
     if(ip->type == T_DIR && omode != O_RDONLY){
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+  }
+
+  // symlink ：查找target
+  // if omode set O_NOFOLLOW, don't follow symlink
+  if (ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)) {
+    char target[MAXPATH];
+    int count;
+    struct inode *next_ip;
+
+    // find recursively
+    for (count = 0; count < 10 && ip->type == T_SYMLINK; count++) {
+      readi(ip, 0, (uint64)&target, 0, sizeof(target));
+      if ((next_ip = namei(target)) == 0) {
+        iunlockput(ip);
+        end_op();
+        return -1;
+      } else {
+        ilock(next_ip);
+        iunlockput(ip); // 去找target，unlock原来的inode
+        ip = next_ip;
+      }
+    }
+
+    if (count == 10) {
       iunlockput(ip);
       end_op();
       return -1;
@@ -482,5 +512,37 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64 
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *ip;
+
+  if (argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  // printf("target: %s, path: %s\n", target, path);
+  
+  begin_op();
+
+  // printf("exec: symlink\n");
+
+  // 创建inode
+  ip = create(path, T_SYMLINK, 0, 0); // ip locked
+  if (ip == 0) {
+    end_op();
+    return -1;
+  }
+
+  // target写入data block
+  // ilock(ip); // 发生死锁
+  writei(ip, 0, (uint64)&target, 0, sizeof(target));
+  iunlockput(ip); // symlink需要自己put，因为不再有sys_close来put
+
+  end_op();
+
   return 0;
 }
